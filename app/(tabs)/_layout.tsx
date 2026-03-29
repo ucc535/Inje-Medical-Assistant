@@ -45,7 +45,7 @@ export default function TabLayout() {
       <MaterialTopTabs.Screen
         name="index"
         options={{
-          title: '브리핑',
+          title: '홈',
           tabBarIcon: (props: any) => (
             <Ionicons name="home-outline" size={22} color={props.color} />
           ),
