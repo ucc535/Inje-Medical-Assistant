@@ -1,15 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import * as SQLite from 'expo-sqlite'; // 💡 [핵심] DB 접근을 위해 추가
 import React, { useState } from 'react';
 import { Alert, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Calendar } from 'react-native-calendars';
+
+// 🗄️ [핵심] 데이터베이스 연결
+const db = SQLite.openDatabaseSync('medical_assistant_v2.db');
 
 // 인제대 부속병원 및 실습과 목록
 const HOSPITALS = ['부산', '상계', '일산', '해운대', '해당없음'];
 const DEPARTMENTS = ['내과', '내과1', '내과2', '외과', '산부인과', '소아청소년과', '정신건강의학과', '응급의학과', '지역의료', '진료역량개발과정', '방학'];
 
-// 💡 필수 실습 과목 및 요구 주수 기준표 (엑셀 스케줄 기준 2주 반영 완)
+// 필수 실습 과목 및 요구 주수 기준표
 const REQUIRED_WEEKS: { [key: string]: number } = {
   '외과': 6,
   '산부인과': 6,
@@ -174,15 +178,42 @@ export default function SetupScreen() {
     }
   };
 
+  // 💡 [핵심] 튕김 방지를 위해 SQLite DB에 저장하는 로직 추가!
   const finalizeSetup = async () => {
     try {
       const finalName = name.trim() || '무명';
+
+      // 1. 테이블이 없으면 만들고, 기존 쓰레기값이 있으면 비움
+      db.execSync(`
+        CREATE TABLE IF NOT EXISTS rotations (
+          date TEXT PRIMARY KEY,
+          hospital TEXT,
+          dept TEXT,
+          color TEXT,
+          textColor TEXT
+        );
+        DELETE FROM rotations;
+      `);
+
+      // 2. 일일 단위로 쪼개진 일정들을 DB에 안전하게 저장
+      db.withTransactionSync(() => {
+        Object.keys(rotations).forEach(date => {
+          const item = rotations[date];
+          db.runSync(
+            "INSERT INTO rotations (date, hospital, dept, color, textColor) VALUES (?, ?, ?, ?, ?)",
+            date, item.hospital, item.dept, item.color, item.textColor
+          );
+        });
+      });
+
+      // 3. 기존의 이름 정보는 정상적으로 저장
       await AsyncStorage.setItem('user_name', finalName);
-      await AsyncStorage.setItem('user_rotations', JSON.stringify(rotations));
+      
+      // 4. 모든 저장이 끝나면 홈으로 이동!
       router.replace('/(tabs)');
     } catch (e) {
       console.error(e);
-      Alert.alert('오류', '저장에 실패했습니다.');
+      Alert.alert('오류', '데이터베이스 저장에 실패했습니다.');
     }
   };
 
@@ -253,7 +284,6 @@ export default function SetupScreen() {
             </ScrollView>
           </View>
 
-          {/* 💡 여기에 경고 문구가 추가되었습니다! */}
           <View style={{ marginTop: 'auto' }}>
             <Text style={styles.warningText}>⚠️ 정확한 주간 과제 마감일 계산을 위해, 일정은 반드시{'\n'}<Text style={styles.highlightText}>'월요일 시작 ~ 일요일 종료'</Text>로 꽉 채워서 설정해주세요.</Text>
             <TouchableOpacity style={[styles.btnFinish, Object.keys(rotations).length === 0 && styles.btnDisabled]} onPress={handleFinishSetup} disabled={Object.keys(rotations).length === 0}>
@@ -315,7 +345,6 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#fff', borderRadius: 12, padding: 18, fontSize: 18, borderWidth: 1, borderColor: '#E1E8EE', marginBottom: 20 },
   btnPrimary: { backgroundColor: '#003594', padding: 18, borderRadius: 12, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },
   
-  // 💡 마진 조정 (버튼 위 텍스트 공간 확보)
   btnFinish: { backgroundColor: '#003594', padding: 18, borderRadius: 12, alignItems: 'center', marginBottom: 10 },
   btnDisabled: { backgroundColor: '#A0B2D1' },
   btnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
@@ -332,7 +361,6 @@ const styles = StyleSheet.create({
   summaryDate: { fontSize: 14, color: '#666', width: 90, fontWeight: '600' },
   summaryDept: { fontSize: 15, color: '#1A1A1A', fontWeight: 'bold', flex: 1 },
 
-  // 💡 빨간색 경고 문구 스타일 추가
   warningText: { textAlign: 'center', color: '#E74C3C', fontSize: 12, lineHeight: 18, marginBottom: 10 },
   highlightText: { fontWeight: 'bold', textDecorationLine: 'underline' },
 

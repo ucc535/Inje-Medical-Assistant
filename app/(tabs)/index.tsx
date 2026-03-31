@@ -42,7 +42,27 @@ export default function HomeScreen() {
       checkFirstLaunch(); // 💡 화면에 들어올 때마다 최초 실행인지 검사
     }
   }, [isFocused]);
+// 💡 [여기에 추가!] 앱이 켜질 때 딱 한 번 실행되는 권한 요청 useEffect
+  useEffect(() => {
+    const requestPermissions = async () => {
+      // 현재 알림 권한 상태 확인
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      
+      // 권한이 없다면 팝업을 띄워서 물어보기!
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      
+      // 거절당했다면 로그 띄우기 (나중에 설정 창 유도 가능)
+      if (finalStatus !== 'granted') {
+        console.log('알림 권한이 거부되었습니다.');
+      }
+    };
 
+    requestPermissions();
+  }, []);
   // 💡 [핵심 추가] 최초 1회 실행 감지 로직
   const checkFirstLaunch = async () => {
     try {
