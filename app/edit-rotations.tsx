@@ -119,7 +119,62 @@ export default function EditRotationsScreen() {
     setShowModal(false); setTempStart(null); setTempEnd(null);
   };
 
-  // 🧠 [스마트 로직] 저장된 일정 기반으로 포트폴리오 퀘스트 자동 조정
+  // 💡 [추가] 날짜 포맷 변환 (2026-03-30 -> 3/30)
+  const formatDateShort = (dateStr: string) => {
+    const [, m, d] = dateStr.split('-');
+    return `${parseInt(m)}/${parseInt(d)}`;
+  };
+
+  // 💡 [추가] 주수 계산 로직
+  const calculateWeeks = (start: string, end: string) => {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; 
+    return Math.round(diffDays / 7); 
+  };
+
+  // 💡 [핵심 알고리즘] 낱개로 흩어진 DB의 날짜 데이터를 기간 덩어리(Chunk)로 다시 묶어주는 함수
+  const generateSummaryList = () => {
+    const dates = Object.keys(rotations).sort();
+    if (dates.length === 0) return [];
+
+    const summary = [];
+    let start = dates[0];
+    let prev = dates[0];
+    let currentHosp = rotations[dates[0]].hospital;
+    let currentDept = rotations[dates[0]].dept;
+
+    for (let i = 1; i < dates.length; i++) {
+      const currDate = dates[i];
+      
+      // prev의 다음날 날짜 구하기
+      const prevDateObj = new Date(prev);
+      prevDateObj.setDate(prevDateObj.getDate() + 1);
+      const expectedNextDate = `${prevDateObj.getFullYear()}-${String(prevDateObj.getMonth() + 1).padStart(2, '0')}-${String(prevDateObj.getDate()).padStart(2, '0')}`;
+
+      const rot = rotations[currDate];
+
+      // 날짜가 연속되고 과목과 병원이 같다면 블록 연장
+      if (currDate === expectedNextDate && rot.hospital === currentHosp && rot.dept === currentDept) {
+        prev = currDate;
+      } else {
+        // 끊겼다면 이전까지의 블록을 저장하고 새로 시작
+        summary.push({ start, end: prev, hospital: currentHosp, dept: currentDept, weeks: calculateWeeks(start, prev) });
+        start = currDate;
+        prev = currDate;
+        currentHosp = rot.hospital;
+        currentDept = rot.dept;
+      }
+    }
+    // 마지막 블록 밀어넣기
+    summary.push({ start, end: prev, hospital: currentHosp, dept: currentDept, weeks: calculateWeeks(start, prev) });
+
+    return summary;
+  };
+
+  const summaryList = generateSummaryList();
+
   const syncPortfolioWithRotation = () => {
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -229,21 +284,39 @@ export default function EditRotationsScreen() {
         <Calendar markingType={'period'} markedDates={getMarkedDates()} onDayPress={onDayPress} theme={{ selectedDayBackgroundColor: '#003594', todayTextColor: '#E74C3C', arrowColor: '#003594' }} />
       </View>
 
-      {/* 💡 [신규] 명확한 가이드라인 멘트 추가 */}
       <View style={styles.infoBox}>
         <Text style={styles.helperText}>💡 수정하거나 지울 기간의 시작일과 종료일을 터치하세요.</Text>
-        <Text style={styles.warningText}>⚠️ 정확한 주간 과제 마감일 계산을 위해, 일정은 반드시 {'\n'}<Text style={styles.highlightText}>'월요일 시작 ~ 일요일 종료'</Text>로 꽉 채워서 설정해주세요.</Text>
       </View>
 
-      <TouchableOpacity style={styles.btnFinish} onPress={handleFinishEdit}>
-        <Text style={styles.btnText}>변경사항 저장하기</Text>
-      </TouchableOpacity>
+      {/* 💡 [신규] 등록된 실습 요약 리스트 출력 영역 */}
+      <View style={styles.summaryContainer}>
+        <Text style={styles.summaryTitle}>📝 현재 등록된 실습 내역</Text>
+        <ScrollView style={styles.summaryScroll} showsVerticalScrollIndicator={false}>
+          {summaryList.length === 0 ? (
+            <Text style={styles.emptySummary}>등록된 실습 일정이 없습니다.</Text>
+          ) : (
+            summaryList.map((item, index) => (
+              <View key={index} style={[styles.summaryItem, { borderLeftColor: DEPT_COLORS[item.dept]?.text || '#CCC' }]}>
+                <Text style={styles.summaryDate}>{formatDateShort(item.start)} ~ {formatDateShort(item.end)}</Text>
+                <Text style={styles.summaryDept}>({item.weeks}주) {item.hospital} {item.dept}</Text>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      </View>
+
+      <View style={{ marginTop: 'auto' }}>
+        <Text style={styles.warningText}>⚠️ 일정은 <Text style={styles.highlightText}>'월요일 시작 ~ 일요일 종료'</Text>로 꽉 채워서 설정해주세요.</Text>
+        <TouchableOpacity style={styles.btnFinish} onPress={handleFinishEdit}>
+          <Text style={styles.btnText}>변경사항 저장하기</Text>
+        </TouchableOpacity>
+      </View>
 
       <Modal visible={showModal} transparent={true} animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>일정 수정 / 삭제</Text>
-            <Text style={styles.modalDate}>{tempStart} ~ {tempEnd}</Text>
+            <Text style={styles.modalDate}>{tempStart} ~ {tempEnd} ({tempStart && tempEnd ? calculateWeeks(tempStart, tempEnd) : 0}주)</Text>
 
             <Text style={styles.sectionLabel}>병원 선택</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollRow}>
@@ -288,13 +361,21 @@ const styles = StyleSheet.create({
   titleSmall: { fontSize: 20, fontWeight: 'bold', color: '#1A1A1A' },
   calendarWrapper: { backgroundColor: '#fff', borderRadius: 20, padding: 10, elevation: 3, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
   
-  // 💡 가이드라인 스타일 추가
   infoBox: { marginTop: 15, paddingHorizontal: 10 },
-  helperText: { textAlign: 'center', color: '#666', fontSize: 14, marginBottom: 8 },
-  warningText: { textAlign: 'center', color: '#E74C3C', fontSize: 13, lineHeight: 18 },
+  helperText: { textAlign: 'center', color: '#666', fontSize: 13, marginBottom: 5 },
+  warningText: { textAlign: 'center', color: '#E74C3C', fontSize: 12, lineHeight: 18, marginBottom: 10 },
   highlightText: { fontWeight: 'bold', textDecorationLine: 'underline' },
 
-  btnFinish: { backgroundColor: '#003594', padding: 18, borderRadius: 12, alignItems: 'center', marginTop: 'auto', marginBottom: 20 },
+  // 💡 요약 리스트 영역 스타일
+  summaryContainer: { flex: 1, marginTop: 5, marginBottom: 15, backgroundColor: '#FFF', borderRadius: 20, padding: 15, elevation: 2 },
+  summaryTitle: { fontSize: 15, fontWeight: 'bold', color: '#333', marginBottom: 10 },
+  summaryScroll: { flex: 1 },
+  emptySummary: { color: '#999', fontSize: 13, textAlign: 'center', marginTop: 20, fontStyle: 'italic' },
+  summaryItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8F9FA', padding: 12, borderRadius: 10, marginBottom: 8, borderLeftWidth: 4 },
+  summaryDate: { fontSize: 14, color: '#666', width: 90, fontWeight: '600' },
+  summaryDept: { fontSize: 15, color: '#1A1A1A', fontWeight: 'bold', flex: 1 },
+
+  btnFinish: { backgroundColor: '#003594', padding: 18, borderRadius: 12, alignItems: 'center', marginBottom: 20 },
   btnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 25 },

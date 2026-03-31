@@ -39,8 +39,24 @@ export default function HomeScreen() {
     if (isFocused) {
       loadUserData();
       checkUrgentTasks();
+      checkFirstLaunch(); // 💡 화면에 들어올 때마다 최초 실행인지 검사
     }
   }, [isFocused]);
+
+  // 💡 [핵심 추가] 최초 1회 실행 감지 로직
+  const checkFirstLaunch = async () => {
+    try {
+      const hasSeenTutorial = await AsyncStorage.getItem('has_seen_tutorial');
+      
+      // 저장된 기록이 없다면 (초기 세팅 후 처음 홈화면에 온 것)
+      if (!hasSeenTutorial) {
+        setTutorialVisible(true); // 튜토리얼을 띄움
+        await AsyncStorage.setItem('has_seen_tutorial', 'true'); // 봤다는 도장을 찍음
+      }
+    } catch (error) {
+      console.log('최초 실행 확인 에러:', error);
+    }
+  };
 
   const getCoordinates = (locationName: string) => {
     if (!locationName) return { lat: 37.6482, lon: 127.0606 }; 
@@ -104,7 +120,7 @@ export default function HomeScreen() {
           <View style={styles.greetingRow}>
             <Text style={styles.greetingText}>안녕하세요 {userName}님!</Text>
             <View style={styles.headerIconsRow}>
-              {/* 💡 [변경] 도움말 클릭 시 튜토리얼 모달 오픈 */}
+              {/* 💡 기존처럼 아이콘을 누르면 언제든지 다시 볼 수 있음 */}
               <TouchableOpacity onPress={() => setTutorialVisible(true)} style={styles.iconBtn}>
                 <Ionicons name="help-circle-outline" size={26} color="#003594" />
               </TouchableOpacity>

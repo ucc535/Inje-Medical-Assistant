@@ -9,65 +9,63 @@ import { Calendar } from 'react-native-calendars';
 const HOSPITALS = ['부산', '상계', '일산', '해운대', '해당없음'];
 const DEPARTMENTS = ['내과', '내과1', '내과2', '외과', '산부인과', '소아청소년과', '정신건강의학과', '응급의학과', '지역의료', '진료역량개발과정', '방학'];
 
-// 💡 시각적 피로도를 낮춘 100% 파스텔톤 & 빨간색 배제 팔레트
+// 💡 필수 실습 과목 및 요구 주수 기준표 (엑셀 스케줄 기준 2주 반영 완)
+const REQUIRED_WEEKS: { [key: string]: number } = {
+  '외과': 6,
+  '산부인과': 6,
+  '소아청소년과': 4,
+  '정신건강의학과': 4,
+  '응급의학과': 2,
+  '지역의료': 2,          
+  '진료역량개발과정': 2   
+};
+
 const DEPT_COLORS: { [key: string]: { bg: string, text: string } } = {
-  '내과': { bg: '#E3F2FD', text: '#1565C0' },         // 부드러운 연파랑
-  '내과1': { bg: '#E3F2FD', text: '#1565C0' },        // 부드러운 연파랑
-  '내과2': { bg: '#EDE7F6', text: '#4527A0' },        // 차분한 연보라
-  '외과': { bg: '#EFEBE9', text: '#4E342E' },         // 안정적인 모카/베이지 (빨강 완전 배제)
-  '산부인과': { bg: '#FCE4EC', text: '#AD1457' },       // 따뜻한 연한 인디핑크
-  '소아청소년과': { bg: '#FFF9C4', text: '#F57F17' },   // 포근한 연노랑
-  '정신건강의학과': { bg: '#E8F5E9', text: '#2E7D32' }, // 눈이 편안한 연두/민트
-  '응급의학과': { bg: '#E0F2F1', text: '#00695C' },     // 차분한 청록/틸 (경각심은 낮추고 안정감 부여)
-  '지역의료': { bg: '#E0F7FA', text: '#00838F' },       // 맑고 연한 하늘색
-  '진료역량개발과정': { bg: '#E8EAF6', text: '#3949AB' },// 부드러운 파스텔 네이비
-  '방학': { bg: '#F5F5F5', text: '#616161' },         // 자극 없는 연회색
+  '내과': { bg: '#E3F2FD', text: '#1565C0' },
+  '내과1': { bg: '#E3F2FD', text: '#1565C0' },
+  '내과2': { bg: '#EDE7F6', text: '#4527A0' },
+  '외과': { bg: '#EFEBE9', text: '#4E342E' },
+  '산부인과': { bg: '#FCE4EC', text: '#AD1457' },
+  '소아청소년과': { bg: '#FFF9C4', text: '#F57F17' },
+  '정신건강의학과': { bg: '#E8F5E9', text: '#2E7D32' },
+  '응급의학과': { bg: '#E0F2F1', text: '#00695C' },
+  '지역의료': { bg: '#E0F7FA', text: '#00838F' },
+  '진료역량개발과정': { bg: '#E8EAF6', text: '#3949AB' },
+  '방학': { bg: '#F5F5F5', text: '#616161' },
 };
 
 export default function SetupScreen() {
   const router = useRouter();
-  
-  // 진행 단계 (1: 이름 입력, 2: 실습 일정 입력)
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
-
-  // 캘린더 선택 상태
   const [tempStart, setTempStart] = useState<string | null>(null);
   const [tempEnd, setTempEnd] = useState<string | null>(null);
-  
-  // 실습 데이터 저장소: { '2026-03-25': { hospital: '부산', dept: '내과', color: '...', textColor: '...' }, ... }
   const [rotations, setRotations] = useState<{[key: string]: any}>({});
-
-  // 모달 상태
   const [showModal, setShowModal] = useState(false);
   const [selectedHosp, setSelectedHosp] = useState('부산');
   const [selectedDept, setSelectedDept] = useState('내과');
 
-  // 💡 이름 입력 완료 시 2단계로 (빈칸이면 무명으로 자동 처리)
+  const [rotationSummary, setRotationSummary] = useState<{ start: string, end: string, hospital: string, dept: string, weeks: number }[]>([]);
+
   const handleNextStep = () => {
-    if (!name.trim()) {
-      setName('무명');
-    }
+    if (!name.trim()) setName('무명');
     setStep(2);
   };
 
-  // 날짜 터치 로직 (시작일 -> 종료일)
   const onDayPress = (day: any) => {
     const dateStr = day.dateString;
     if (!tempStart || (tempStart && tempEnd)) {
       setTempStart(dateStr);
       setTempEnd(null);
     } else {
-      if (dateStr < tempStart) {
-        setTempStart(dateStr);
-      } else {
+      if (dateStr < tempStart) setTempStart(dateStr);
+      else {
         setTempEnd(dateStr);
         setShowModal(true);
       }
     }
   };
 
-  // 날짜 범위 계산 함수
   const getDatesInRange = (start: string, end: string) => {
     const dates = [];
     let curr = new Date(start);
@@ -82,13 +80,18 @@ export default function SetupScreen() {
     return dates;
   };
 
-  // 💡 병원/과 선택 완료 및 데이터 저장 (색상 포함)
+  const calculateWeeks = (start: string, end: string) => {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; 
+    return Math.round(diffDays / 7); 
+  };
+
   const handleSaveRotation = () => {
     if (!tempStart || !tempEnd) return;
     const dates = getDatesInRange(tempStart, tempEnd);
     const newRotations = { ...rotations };
-    
-    // 선택한 과목에 맞는 파스텔 색상 꺼내오기
     const selectedColor = DEPT_COLORS[selectedDept] || { bg: '#E3F2FD', text: '#1565C0' };
     
     dates.forEach((date) => {
@@ -101,35 +104,77 @@ export default function SetupScreen() {
     });
 
     setRotations(newRotations);
+    
+    const weeks = calculateWeeks(tempStart, tempEnd);
+    setRotationSummary(prev => [...prev, { start: tempStart, end: tempEnd, hospital: selectedHosp, dept: selectedDept, weeks: weeks }]);
+
     setShowModal(false);
     setTempStart(null);
     setTempEnd(null);
   };
 
-  // 💡 캘린더 마킹 생성 (과목별 파스텔 색상 반영)
-  const getMarkedDates = () => {
-    let marks: any = {};
-    
-    // 1. 이미 저장된 실습 일정
-    Object.keys(rotations).forEach(date => {
-      marks[date] = { 
-        startingDay: true, 
-        endingDay: true, 
-        color: rotations[date].color, 
-        textColor: rotations[date].textColor 
-      };
-    });
-
-    // 2. 현재 선택 중인 시작일
-    if (tempStart) marks[tempStart] = { startingDay: true, color: '#003594', textColor: 'white' };
-    // 3. 현재 선택 중인 종료일
-    if (tempEnd) marks[tempEnd] = { endingDay: true, color: '#003594', textColor: 'white' };
-    
-    return marks;
+  const handleRemoveLastRotation = () => {
+    if (rotationSummary.length === 0) return;
+    Alert.alert("일정 삭제", "가장 마지막으로 등록한 일정을 지우시겠습니까?", [
+      { text: "취소", style: "cancel" },
+      { text: "삭제", style: "destructive", onPress: () => {
+          const lastItem = rotationSummary[rotationSummary.length - 1];
+          const datesToRemove = getDatesInRange(lastItem.start, lastItem.end);
+          const newRotations = { ...rotations };
+          datesToRemove.forEach(date => delete newRotations[date]);
+          
+          setRotations(newRotations);
+          setRotationSummary(prev => prev.slice(0, -1));
+        }
+      }
+    ]);
   };
 
-  // 모든 설정 완료 후 앱으로 진입
-  const handleFinishSetup = async () => {
+  const validateRotations = () => {
+    let totalInternalMedWeeks = 0;
+    const deptWeeks: { [key: string]: number } = {};
+
+    rotationSummary.forEach(item => {
+      if (item.dept.includes('내과')) {
+        totalInternalMedWeeks += item.weeks;
+      } else {
+        deptWeeks[item.dept] = (deptWeeks[item.dept] || 0) + item.weeks;
+      }
+    });
+
+    const missingDepts = [];
+
+    if (totalInternalMedWeeks < 12) {
+      missingDepts.push(`내과 계열 (12주 필요, 현재 ${totalInternalMedWeeks}주)`);
+    }
+
+    for (const [dept, reqWeeks] of Object.entries(REQUIRED_WEEKS)) {
+      if ((deptWeeks[dept] || 0) < reqWeeks) {
+        missingDepts.push(`${dept} (${reqWeeks}주 필요, 현재 ${deptWeeks[dept] || 0}주)`);
+      }
+    }
+
+    if (missingDepts.length > 0) {
+      Alert.alert(
+        "필수 실습 부족!",
+        `다음 과목들의 실습 일정이 부족합니다.\n\n${missingDepts.join('\n')}\n\n이대로 앱을 시작하시겠습니까?`,
+        [
+          { text: "돌아가서 수정", style: "cancel" },
+          { text: "그냥 시작할래요", onPress: finalizeSetup }
+        ]
+      );
+      return false;
+    }
+    return true;
+  };
+
+  const handleFinishSetup = () => {
+    if (validateRotations()) {
+      finalizeSetup();
+    }
+  };
+
+  const finalizeSetup = async () => {
     try {
       const finalName = name.trim() || '무명';
       await AsyncStorage.setItem('user_name', finalName);
@@ -141,15 +186,28 @@ export default function SetupScreen() {
     }
   };
 
+  const getMarkedDates = () => {
+    let marks: any = {};
+    Object.keys(rotations).forEach(date => {
+      marks[date] = { startingDay: true, endingDay: true, color: rotations[date].color, textColor: rotations[date].textColor };
+    });
+    if (tempStart) marks[tempStart] = { startingDay: true, color: '#003594', textColor: 'white' };
+    if (tempEnd) marks[tempEnd] = { endingDay: true, color: '#003594', textColor: 'white' };
+    return marks;
+  };
+
+  const formatDateShort = (dateStr: string) => {
+    const [, m, d] = dateStr.split('-');
+    return `${parseInt(m)}/${parseInt(d)}`;
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       {step === 1 ? (
-        // ------------------ 1단계: 이름 입력 ------------------
         <View style={styles.stepContainer}>
           <Ionicons name="medical" size={60} color="#003594" style={{ marginBottom: 20 }} />
           <Text style={styles.title}>환영합니다!</Text>
           <Text style={styles.subtitle}>스마트 비서를 시작하기 위해{'\n'}의사선생님의 이름을 알려주세요.</Text>
-          {/* 💡 placeholder를 영환으로 수정 */}
           <TextInput style={styles.input} placeholder="이름 입력 (예: 영환)" value={name} onChangeText={setName} autoFocus={true} />
           <TouchableOpacity style={styles.btnPrimary} onPress={handleNextStep}>
             <Text style={styles.btnText}>다음 (실습 일정 입력)</Text>
@@ -157,7 +215,6 @@ export default function SetupScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        // ------------------ 2단계: 실습 일정 입력 ------------------
         <View style={styles.stepContainerCalendar}>
           <View style={styles.header}>
             <Text style={styles.titleSmall}>임상실습(PK) 일정 등록</Text>
@@ -169,27 +226,48 @@ export default function SetupScreen() {
               markingType={'period'}
               markedDates={getMarkedDates()}
               onDayPress={onDayPress}
-              theme={{
-                selectedDayBackgroundColor: '#003594',
-                todayTextColor: '#E74C3C',
-                arrowColor: '#003594',
-              }}
+              theme={{ selectedDayBackgroundColor: '#003594', todayTextColor: '#E74C3C', arrowColor: '#003594' }}
             />
           </View>
 
-          {/* 등록된 실습이 있으면 하단에 저장 버튼 활성화 */}
-          <TouchableOpacity style={[styles.btnFinish, Object.keys(rotations).length === 0 && styles.btnDisabled]} onPress={handleFinishSetup} disabled={Object.keys(rotations).length === 0}>
-            <Text style={styles.btnText}>모든 설정 완료하고 앱 시작하기</Text>
-          </TouchableOpacity>
+          <View style={styles.summaryContainer}>
+            <View style={styles.summaryHeader}>
+              <Text style={styles.summaryTitle}>📝 등록된 실습 내역</Text>
+              {rotationSummary.length > 0 && (
+                <TouchableOpacity onPress={handleRemoveLastRotation}>
+                  <Text style={styles.undoText}>마지막 삭제 ↺</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <ScrollView style={styles.summaryScroll} showsVerticalScrollIndicator={false}>
+              {rotationSummary.length === 0 ? (
+                <Text style={styles.emptySummary}>달력에서 날짜를 선택해 일정을 추가해보세요.</Text>
+              ) : (
+                rotationSummary.map((item, index) => (
+                  <View key={index} style={[styles.summaryItem, { borderLeftColor: DEPT_COLORS[item.dept]?.text || '#CCC' }]}>
+                    <Text style={styles.summaryDate}>{formatDateShort(item.start)} ~ {formatDateShort(item.end)}</Text>
+                    <Text style={styles.summaryDept}>({item.weeks}주) {item.hospital} {item.dept}</Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </View>
+
+          {/* 💡 여기에 경고 문구가 추가되었습니다! */}
+          <View style={{ marginTop: 'auto' }}>
+            <Text style={styles.warningText}>⚠️ 정확한 주간 과제 마감일 계산을 위해, 일정은 반드시{'\n'}<Text style={styles.highlightText}>'월요일 시작 ~ 일요일 종료'</Text>로 꽉 채워서 설정해주세요.</Text>
+            <TouchableOpacity style={[styles.btnFinish, Object.keys(rotations).length === 0 && styles.btnDisabled]} onPress={handleFinishSetup} disabled={Object.keys(rotations).length === 0}>
+              <Text style={styles.btnText}>모든 설정 완료하고 앱 시작하기</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
-      {/* ------------------ 병원 및 과목 선택 모달 ------------------ */}
       <Modal visible={showModal} transparent={true} animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>실습 정보 입력</Text>
-            <Text style={styles.modalDate}>{tempStart} ~ {tempEnd}</Text>
+            <Text style={styles.modalDate}>{tempStart} ~ {tempEnd} ({tempStart && tempEnd ? calculateWeeks(tempStart, tempEnd) : 0}주)</Text>
 
             <Text style={styles.sectionLabel}>병원 선택</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollRow}>
@@ -226,10 +304,9 @@ export default function SetupScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
-  // 💡 키보드에 가리지 않도록 위로 바짝 끌어올린 정렬
   stepContainer: { flex: 1, justifyContent: 'flex-start', paddingTop: 120, paddingHorizontal: 30 },
-  stepContainerCalendar: { flex: 1, padding: 20, paddingTop: 60 },
-  header: { marginBottom: 20 },
+  stepContainerCalendar: { flex: 1, padding: 20, paddingTop: 40 },
+  header: { marginBottom: 15 },
   title: { fontSize: 28, fontWeight: 'bold', color: '#1A1A1A', marginBottom: 10 },
   subtitle: { fontSize: 16, color: '#666', lineHeight: 24, marginBottom: 40 },
   titleSmall: { fontSize: 22, fontWeight: 'bold', color: '#1A1A1A' },
@@ -237,13 +314,28 @@ const styles = StyleSheet.create({
   
   input: { backgroundColor: '#fff', borderRadius: 12, padding: 18, fontSize: 18, borderWidth: 1, borderColor: '#E1E8EE', marginBottom: 20 },
   btnPrimary: { backgroundColor: '#003594', padding: 18, borderRadius: 12, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },
-  btnFinish: { backgroundColor: '#003594', padding: 18, borderRadius: 12, alignItems: 'center', marginTop: 20 },
+  
+  // 💡 마진 조정 (버튼 위 텍스트 공간 확보)
+  btnFinish: { backgroundColor: '#003594', padding: 18, borderRadius: 12, alignItems: 'center', marginBottom: 10 },
   btnDisabled: { backgroundColor: '#A0B2D1' },
   btnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
 
   calendarWrapper: { backgroundColor: '#fff', borderRadius: 20, padding: 10, elevation: 3, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
 
-  // 모달 스타일
+  summaryContainer: { flex: 1, marginTop: 15, marginBottom: 15, backgroundColor: '#FFF', borderRadius: 20, padding: 15, elevation: 2 },
+  summaryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  summaryTitle: { fontSize: 15, fontWeight: 'bold', color: '#333' },
+  undoText: { color: '#E74C3C', fontSize: 13, fontWeight: 'bold' },
+  summaryScroll: { flex: 1 },
+  emptySummary: { color: '#999', fontSize: 13, textAlign: 'center', marginTop: 20, fontStyle: 'italic' },
+  summaryItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8F9FA', padding: 12, borderRadius: 10, marginBottom: 8, borderLeftWidth: 4 },
+  summaryDate: { fontSize: 14, color: '#666', width: 90, fontWeight: '600' },
+  summaryDept: { fontSize: 15, color: '#1A1A1A', fontWeight: 'bold', flex: 1 },
+
+  // 💡 빨간색 경고 문구 스타일 추가
+  warningText: { textAlign: 'center', color: '#E74C3C', fontSize: 12, lineHeight: 18, marginBottom: 10 },
+  highlightText: { fontWeight: 'bold', textDecorationLine: 'underline' },
+
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 25 },
   modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 5 },
