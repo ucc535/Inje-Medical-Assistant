@@ -100,7 +100,7 @@ export default function CalendarScreen() {
       );
       loadAllData();
       setNewTitle(''); setNewLocation(''); setNewNote(''); setSelectedCategory(CATEGORIES[2]);
-      setAddModalVisible(false);
+      setAddModalVisible(false); // 💡 저장 후 추가 모달만 닫히고 세부창은 유지됨!
     } catch (e) { Alert.alert('오류', '일정 저장에 실패했습니다.'); }
   };
 
@@ -223,7 +223,17 @@ export default function CalendarScreen() {
               </View>
 
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>개인 일정 <Text style={{color:'#003594'}}>[{schedules[selected]?.length || 0}]</Text></Text>
+                {/* 💡 [핵심 수정] 타이틀 옆에 미니 일정 추가 버튼 배치 */}
+                <View style={styles.sectionHeaderFlex}>
+                  <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
+                    개인 일정 <Text style={{color:'#003594'}}>[{schedules[selected]?.length || 0}]</Text>
+                  </Text>
+                  <TouchableOpacity onPress={() => setAddModalVisible(true)} style={styles.addMiniBtn}>
+                    <Ionicons name="add" size={16} color="#FFF" />
+                    <Text style={styles.addMiniBtnText}>추가</Text>
+                  </TouchableOpacity>
+                </View>
+
                 {schedules[selected] && schedules[selected].length > 0 ? (
                   schedules[selected].map((item: any) => (
                     <View key={item.id} style={[styles.infoCard, { borderLeftColor: item.color || '#4A90E2', borderLeftWidth: 5, marginBottom: 10 }]}>
@@ -259,6 +269,7 @@ export default function CalendarScreen() {
         </View>
       </Modal>
 
+      {/* 일정 추가 모달창 (세부 모달 위에 겹쳐서 뜨게 됨) */}
       <Modal visible={isAddModalVisible} animationType="fade" transparent={true} onRequestClose={() => setAddModalVisible(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === "android" ? "height" : "padding"} style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -312,6 +323,12 @@ const styles = StyleSheet.create({
   detailsDateText: { fontSize: 20, fontWeight: 'bold', color: '#1A1A1A' },
   section: { marginBottom: 25 },
   sectionTitle: { fontSize: 13, fontWeight: '800', color: '#AAA', letterSpacing: 1, marginBottom: 12, textTransform: 'uppercase' },
+  
+  // 💡 [핵심 추가] 세부 화면 안의 미니 추가 버튼 스타일
+  sectionHeaderFlex: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  addMiniBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#003594', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, gap: 4 },
+  addMiniBtnText: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
+
   infoCardSimple: { backgroundColor: '#F8F9FA', padding: 15, borderRadius: 12, borderLeftWidth: 5 },
   infoTitleSimple: { fontSize: 16, fontWeight: 'bold', color: '#333' },
   infoCard: { backgroundColor: '#FFF', padding: 15, borderRadius: 15, elevation: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#F2F5F8' },
