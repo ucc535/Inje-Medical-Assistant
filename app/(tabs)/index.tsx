@@ -32,30 +32,39 @@ export default function HomeScreen() {
   const [isWarningDismissed, setIsWarningDismissed] = useState(false);
   const [urgentTask, setUrgentTask] = useState<string | null>(null);
 
-  // 💡 튜토리얼 상태 추가
   const [isTutorialVisible, setTutorialVisible] = useState(false);
+
+  // 💡 [핵심 추가] DB 테이블 기초 공사 함수 (한 줄씩 안전하게 생성)
+  const initDatabase = () => {
+    try {
+      db.runSync(`CREATE TABLE IF NOT EXISTS rotations (date TEXT PRIMARY KEY, hospital TEXT, dept TEXT, color TEXT, textColor TEXT)`);
+      db.runSync(`CREATE TABLE IF NOT EXISTS schedules (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, time TEXT, title TEXT, category TEXT, location TEXT, note TEXT, color TEXT)`);
+      db.runSync(`CREATE TABLE IF NOT EXISTS portfolio_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, category TEXT NOT NULL, deadlineInfo TEXT, requiredCount INTEGER DEFAULT 1, currentCount INTEGER DEFAULT 0, completed INTEGER DEFAULT 0, isCustom INTEGER DEFAULT 0, deadlineTimestamp INTEGER)`);
+      db.runSync(`CREATE TABLE IF NOT EXISTS memos (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, createdAt TEXT)`);
+    } catch (error) {
+      console.log("DB 초기화 에러:", error);
+    }
+  };
 
   useEffect(() => {
     if (isFocused) {
+      initDatabase(); // 💡 무조건 데이터를 찾기 전에 테이블부터 생성!
       loadUserData();
       checkUrgentTasks();
-      checkFirstLaunch(); // 💡 화면에 들어올 때마다 최초 실행인지 검사
+      checkFirstLaunch();
     }
   }, [isFocused]);
-// 💡 [여기에 추가!] 앱이 켜질 때 딱 한 번 실행되는 권한 요청 useEffect
+
   useEffect(() => {
     const requestPermissions = async () => {
-      // 현재 알림 권한 상태 확인
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
       
-      // 권한이 없다면 팝업을 띄워서 물어보기!
       if (existingStatus !== 'granted') {
         const { status } = await Notifications.requestPermissionsAsync();
         finalStatus = status;
       }
       
-      // 거절당했다면 로그 띄우기 (나중에 설정 창 유도 가능)
       if (finalStatus !== 'granted') {
         console.log('알림 권한이 거부되었습니다.');
       }
@@ -63,15 +72,13 @@ export default function HomeScreen() {
 
     requestPermissions();
   }, []);
-  // 💡 [핵심 추가] 최초 1회 실행 감지 로직
+
   const checkFirstLaunch = async () => {
     try {
       const hasSeenTutorial = await AsyncStorage.getItem('has_seen_tutorial');
-      
-      // 저장된 기록이 없다면 (초기 세팅 후 처음 홈화면에 온 것)
       if (!hasSeenTutorial) {
-        setTutorialVisible(true); // 튜토리얼을 띄움
-        await AsyncStorage.setItem('has_seen_tutorial', 'true'); // 봤다는 도장을 찍음
+        setTutorialVisible(true);
+        await AsyncStorage.setItem('has_seen_tutorial', 'true');
       }
     } catch (error) {
       console.log('최초 실행 확인 에러:', error);
@@ -110,7 +117,7 @@ export default function HomeScreen() {
 
       let targetLocation = rotation?.hospital || (results.length > 0 ? results[0].location : '상계');
       fetchWeather(targetLocation);
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("데이터 로드 에러:", e); }
   };
 
   const checkUrgentTasks = () => {
@@ -140,7 +147,6 @@ export default function HomeScreen() {
           <View style={styles.greetingRow}>
             <Text style={styles.greetingText}>안녕하세요 {userName}님!</Text>
             <View style={styles.headerIconsRow}>
-              {/* 💡 기존처럼 아이콘을 누르면 언제든지 다시 볼 수 있음 */}
               <TouchableOpacity onPress={() => setTutorialVisible(true)} style={styles.iconBtn}>
                 <Ionicons name="help-circle-outline" size={26} color="#003594" />
               </TouchableOpacity>
@@ -186,7 +192,6 @@ export default function HomeScreen() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* 💡 튜토리얼 모달 컴포넌트 호출 */}
       <TutorialModal 
         visible={isTutorialVisible} 
         onClose={() => setTutorialVisible(false)} 
