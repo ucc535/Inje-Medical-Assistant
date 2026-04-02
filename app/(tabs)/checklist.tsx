@@ -56,7 +56,6 @@ export default function ChecklistScreen() {
     }
   }, [isFocused]);
 
-// 💡 함수 앞에 async를 붙여줍니다!
   const initAndSync = async () => {
     try {
       db.execSync(`
@@ -68,16 +67,9 @@ export default function ChecklistScreen() {
           completed INTEGER DEFAULT 0, isCustom INTEGER DEFAULT 0, deadlineTimestamp INTEGER
         );
       `);
-      try { db.execSync(`ALTER TABLE portfolio_tasks ADD COLUMN deadlineTimestamp INTEGER;`); } catch(e){}
 
-      const oldPomr = db.getFirstSync<Task>("SELECT id FROM portfolio_tasks WHERE title = '입원환자 POMR/증례발표'");
-      if (oldPomr) {
-        db.runSync("UPDATE portfolio_tasks SET title = '입원환자 POMR 작성' WHERE id = ?", oldPomr.id);
-        db.runSync("INSERT INTO portfolio_tasks (title, category, deadlineInfo, requiredCount) VALUES (?, 'event', '실습 기간 누적', 0)", '입원환자 증례발표');
-      }
-      db.runSync("DELETE FROM portfolio_tasks WHERE title = '관찰 임상술기 (8종)'"); 
-
-      const countRes = db.getFirstSync<{ count: number }>("SELECT COUNT(*) as count FROM portfolio_tasks WHERE category != 'triggered' AND category != 'weekly_dept' AND isCustom = 0");
+      // 1. 초기 데이터 설정 (앱 설치 후 첫 실행 시)
+      const countRes = db.getFirstSync<{ count: number }>("SELECT COUNT(*) as count FROM portfolio_tasks WHERE isCustom = 0");
       if (countRes?.count === 0) {
         const initialTasks = [
           ['임상표현 계획과 자기평가', 'pre', '주말 내 완료', 1],
@@ -89,8 +81,8 @@ export default function ChecklistScreen() {
           ['외래참관', 'event', '실습 기간 누적', 0],
           ['주간실습성찰 제출', 'weekly', '일요일 밤 마감', 1],
           ['SNAPPS 증례발표 기록', 'weekly', '일요일 밤 마감', 1],
-          ['입원환자 POMR 작성', 'event', '실습 기간 누적', 0], 
-          ['입원환자 증례발표', 'event', '실습 기간 누적', 0],
+          ['입원환자 POMR', 'event', '실습 기간 누적', 0], 
+          ['증례발표', 'event', '실습 기간 누적', 0], // 이름에서 '입원환자' 제거하여 심플하게
           ['환자안전성찰 제출', 'end', '4주차 목요일', 1],
           ['의사다움(Doctoring) 성찰지', 'end', '5주차 포럼 전', 1],
           ['360도 다면평가 (동료/전공의/교수)', 'end', '턴 종료 전', 1], 
@@ -104,62 +96,38 @@ export default function ChecklistScreen() {
         });
       }
 
+      // 2. 현재 실습과(Dept) 파악 및 주간 퀘스트 생성
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       const rot = db.getFirstSync<any>("SELECT dept FROM rotations WHERE date = ?", todayStr);
       
       if (rot) {
         setCurrentDept(rot.dept);
-        
-        // 🚨 [핵심 추가 로직] 실습 과목(dept)이 바뀌었다면 누적 퀘스트를 0으로 초기화!
         const lastDept = await AsyncStorage.getItem('last_rotation_dept');
         if (lastDept && lastDept !== rot.dept) {
           db.runSync("UPDATE portfolio_tasks SET currentCount = 0, completed = 0 WHERE category = 'event' OR category = 'end'");
         }
         await AsyncStorage.setItem('last_rotation_dept', rot.dept);
         
+        // 실습과별 규칙 (obsPace: 1로 고정하여 주간 1회만 노출)
         const rules: any = {
-          '내과': { outTotal: 24, obsTotal: 12, surTotal: 0, pomrTotal: 12, caseTotal: 12, pblTotal: 12, skillBasic: 14, skillObs: 12, outPace: 2, obsPace: 1, surPace: 0, pomrPace: 1, casePace: 1, pblPace: 1 },
-          '내과1': { outTotal: 12, obsTotal: 6, surTotal: 0, pomrTotal: 6, caseTotal: 6, pblTotal: 6, skillBasic: 7, skillObs: 6, outPace: 2, obsPace: 1, surPace: 0, pomrPace: 1, casePace: 1, pblPace: 1 },
-          '내과2': { outTotal: 12, obsTotal: 6, surTotal: 0, pomrTotal: 6, caseTotal: 6, pblTotal: 6, skillBasic: 7, skillObs: 6, outPace: 2, obsPace: 1, surPace: 0, pomrPace: 1, casePace: 1, pblPace: 1 },
-          '외과': { outTotal: 4, obsTotal: 0, surTotal: 6, pomrTotal: 4, caseTotal: 2, pblTotal: 6, skillBasic: 8, skillObs: 8, outPace: 0, obsPace: 0, surPace: 1, pomrPace: 0, casePace: 0, pblPace: 1 },
-          '산부인과': { outTotal: 6, obsTotal: 12, surTotal: 5, pomrTotal: 2, caseTotal: 1, pblTotal: 6, skillBasic: 9, skillObs: 10, outPace: 1, obsPace: 2, surPace: 0, pomrPace: 0, casePace: 0, pblPace: 1 },
-          '소아청소년과': { outTotal: 4, obsTotal: 8, surTotal: 0, pomrTotal: 4, caseTotal: 4, pblTotal: 4, skillBasic: 3, skillObs: 1, outPace: 1, obsPace: 2, surPace: 0, pomrPace: 1, casePace: 1, pblPace: 1 },
-          '정신건강의학과': { outTotal: 4, obsTotal: 12, surTotal: 0, pomrTotal: 4, caseTotal: 1, pblTotal: 4, skillBasic: 4, skillObs: 5, outPace: 1, obsPace: 3, surPace: 0, pomrPace: 1, casePace: 0, pblPace: 1 },
-          '응급의학과': { outTotal: 2, obsTotal: 0, surTotal: 0, pomrTotal: 0, caseTotal: 1, pblTotal: 2, skillBasic: 1, skillObs: 4, outPace: 1, obsPace: 0, surPace: 0, pomrPace: 0, casePace: 0, pblPace: 1 }
+          '내과': { outTotal: 24, obsTotal: 12, surTotal: 0, pomrTotal: 12, caseTotal: 12, pblTotal: 12, outPace: 2, obsPace: 1, surPace: 0, pomrPace: 1, casePace: 1, pblPace: 1 },
+          '외과': { outTotal: 4, obsTotal: 0, surTotal: 6, pomrTotal: 4, caseTotal: 2, pblTotal: 6, outPace: 0, obsPace: 0, surPace: 1, pomrPace: 0, casePace: 0, pblPace: 1 },
+          '산부인과': { outTotal: 6, obsTotal: 12, surTotal: 5, pomrTotal: 2, caseTotal: 1, pblTotal: 6, outPace: 1, obsPace: 1, surPace: 0, pomrPace: 0, casePace: 0, pblPace: 1 },
+          '소아청소년과': { outTotal: 4, obsTotal: 8, surTotal: 0, pomrTotal: 4, caseTotal: 4, pblTotal: 4, outPace: 1, obsPace: 1, surPace: 0, pomrPace: 1, casePace: 1, pblPace: 1 },
         };
-        const r = rules[rot.dept] || { outTotal: 2, obsTotal: 0, surTotal: 0, pomrTotal: 1, caseTotal: 1, pblTotal: 2, skillBasic: 1, skillObs: 1, outPace: 1, obsPace: 0, surPace: 0, pomrPace: 1, casePace: 0, pblPace: 1 };
-        
-        db.runSync("UPDATE portfolio_tasks SET requiredCount = ? WHERE title LIKE '%외래예진기록%' AND category = 'event'", r.outTotal);
-        db.runSync("UPDATE portfolio_tasks SET requiredCount = ? WHERE title LIKE '%수술참관기록%' AND category = 'event'", r.surTotal);
-        db.runSync("UPDATE portfolio_tasks SET requiredCount = ? WHERE title LIKE '%POMR%' AND category = 'event'", r.pomrTotal);
-        db.runSync("UPDATE portfolio_tasks SET requiredCount = ? WHERE title LIKE '%외래참관%' AND category = 'event'", r.obsTotal);
-        db.runSync("UPDATE portfolio_tasks SET requiredCount = ? WHERE title LIKE '%입원환자 증례발표%' AND category = 'event'", r.caseTotal);
-
-        const ensureSpecialTask = (title: string, count: number) => {
-          const exists = db.getFirstSync("SELECT id FROM portfolio_tasks WHERE title = ?", [title]);
-          if (!exists) {
-            db.runSync("INSERT INTO portfolio_tasks (title, category, deadlineInfo, requiredCount) VALUES (?, 'event', '과별 필수 항목', ?)", title, count);
-          } else {
-            db.runSync("UPDATE portfolio_tasks SET requiredCount = ? WHERE title = ?", count, title);
-          }
-        };
-
-        ensureSpecialTask('PBL 개인과제', r.pblTotal);
-        ensureSpecialTask('임상술기 (기본-루브릭)', r.skillBasic);
-        ensureSpecialTask('임상술기 (관찰)', r.skillObs);
-
-        if (rot.dept.includes('내과')) ensureSpecialTask('ER/ICU 당직 실습 기록', 2);
-        if (rot.dept === '정신건강의학과') ensureSpecialTask('정신상태검사(MSE) 기록', 4);
-        if (rot.dept === '응급의학과') ensureSpecialTask('심폐소생술(CPR) 참여/관찰', 1);
+        const r = rules[rot.dept] || { outTotal: 2, obsTotal: 0, surTotal: 0, pomrTotal: 1, caseTotal: 1, pblTotal: 2, outPace: 1, obsPace: 1, surPace: 0, pomrPace: 1, casePace: 1, pblPace: 1 };
 
         const ensureWeeklyRows = (label: string, pace: number) => {
-          const existing = db.getAllSync("SELECT * FROM portfolio_tasks WHERE category = 'weekly_dept' AND isCustom = 0 AND title LIKE ?", `%${label}%`);
+          const existing = db.getAllSync<Task>("SELECT * FROM portfolio_tasks WHERE category = 'weekly_dept' AND isCustom = 0 AND title LIKE ?", `${label}%`);
           if (existing.length < pace) {
             for (let i = existing.length + 1; i <= pace; i++) {
-              db.runSync("INSERT INTO portfolio_tasks (title, category, deadlineInfo, requiredCount, isCustom) VALUES (?, 'weekly_dept', '일요일 밤 마감', 1, 0)", `${label} (${i}/${pace})`);
+              // 💡 pace가 1이면 번호 없이 이름만, 2이상이면 '이름 1', '이름 2'로 생성 (1/1 괄호 없음!)
+              const taskTitle = pace === 1 ? label : `${label} ${i}`;
+              db.runSync("INSERT INTO portfolio_tasks (title, category, deadlineInfo, requiredCount, isCustom) VALUES (?, 'weekly_dept', '일요일 밤 마감', 1, 0)", taskTitle);
             }
           } else if (existing.length > pace) {
-            db.runSync(`DELETE FROM portfolio_tasks WHERE id IN (SELECT id FROM portfolio_tasks WHERE category = 'weekly_dept' AND isCustom = 0 AND title LIKE '%${label}%' LIMIT ${existing.length - pace})`);
+            const toDelete = existing.slice(pace);
+            toDelete.forEach(t => db.runSync("DELETE FROM portfolio_tasks WHERE id = ?", t.id));
           }
         };
 
@@ -168,11 +136,8 @@ export default function ChecklistScreen() {
         ensureWeeklyRows('입원환자 POMR', r.pomrPace);
         ensureWeeklyRows('외래참관', r.obsPace);
         ensureWeeklyRows('증례발표', r.casePace);
-        ensureWeeklyRows('PBL 개인과제', r.pblPace);
       }
 
-      const endTask = db.getFirstSync<any>("SELECT deadlineTimestamp FROM portfolio_tasks WHERE category = 'end' LIMIT 1");
-      if (endTask?.deadlineTimestamp) setRotationEndDate(endTask.deadlineTimestamp);
       checkAndReset();
     } catch (e) { console.error("초기화 실패:", e); }
   };
@@ -184,10 +149,12 @@ export default function ChecklistScreen() {
       const nowTime = now.getTime();
       const dailyTarget = new Date(now); dailyTarget.setHours(2, 0, 0, 0); 
       if (now < dailyTarget) dailyTarget.setDate(dailyTarget.getDate() - 1);
+
       if (!lastDailyReset || Number(lastDailyReset) < dailyTarget.getTime()) {
         db.runSync("UPDATE portfolio_tasks SET currentCount = 0, completed = 0 WHERE category = 'daily'");
         await AsyncStorage.setItem('last_daily_reset', nowTime.toString());
       }
+
       let lastMonday = new Date(now);
       const currentDay = lastMonday.getDay();
       if (currentDay === 1 && now.getHours() < 2) lastMonday.setDate(lastMonday.getDate() - 7);
@@ -195,8 +162,7 @@ export default function ChecklistScreen() {
       lastMonday.setHours(2, 0, 0, 0);
 
       if (!lastWeeklyReset || Number(lastWeeklyReset) < lastMonday.getTime()) {
-        db.runSync("UPDATE portfolio_tasks SET currentCount = 0, completed = 0 WHERE category = 'weekly' OR category = 'pre'");
-        db.runSync("UPDATE portfolio_tasks SET currentCount = 0, completed = 0 WHERE category = 'weekly_dept'");
+        db.runSync("UPDATE portfolio_tasks SET currentCount = 0, completed = 0 WHERE category = 'weekly' OR category = 'pre' OR category = 'weekly_dept'");
         db.runSync("DELETE FROM portfolio_tasks WHERE category = 'triggered' AND completed = 1");
         await AsyncStorage.setItem('last_weekly_reset', nowTime.toString());
       }
@@ -222,14 +188,12 @@ export default function ChecklistScreen() {
 
   const syncCumulativeCount = (task: Task, diff: number) => {
     if (task.category !== 'triggered' && task.category !== 'weekly_dept') return;
-    
     let search = null;
     if (task.title.includes('외래예진')) search = '외래예진기록';
     else if (task.title.includes('수술')) search = '수술참관기록';
     else if (task.title.includes('POMR')) search = 'POMR';
     else if (task.title.includes('외래참관')) search = '외래참관';
     else if (task.title.includes('증례발표')) search = '증례발표';
-    else if (task.title.includes('PBL')) search = 'PBL 개인과제';
 
     if (search) {
       const main = db.getFirstSync<Task>("SELECT * FROM portfolio_tasks WHERE category = 'event' AND title LIKE ?", `%${search}%`);
@@ -249,9 +213,7 @@ export default function ChecklistScreen() {
       isDone = task.completed === 0 ? 1 : 0; nextCount = isDone ? 1 : 0;
     }
     db.runSync("UPDATE portfolio_tasks SET currentCount = ?, completed = ? WHERE id = ?", nextCount, isDone, task.id);
-    
-    const diff = isDone ? 1 : -1;
-    syncCumulativeCount(task, diff);
+    syncCumulativeCount(task, isDone ? 1 : -1);
     loadTasks();
   };
 
@@ -297,8 +259,10 @@ export default function ChecklistScreen() {
     setNewTitle(''); setAddModalVisible(false); loadTasks();
   };
 
-  const renderTaskRow = (task: Task, isCrisis: boolean, color: string, overrideSub?: string) => {
+  const renderTaskRow = (task: Task, isCrisis: boolean, color: string) => {
     const themeColor = isCrisis ? '#E74C3C' : color;
+    const isSimpleCheck = task.requiredCount === 1;
+
     return (
       <TouchableOpacity key={task.id} style={styles.taskRow} onPress={() => handleTaskPress(task)} onLongPress={() => handleLongPress(task)}>
         <Ionicons name={task.completed === 1 ? "checkmark-circle" : "ellipse-outline"} size={26} color={task.completed === 1 ? themeColor : "#D1D9E6"} />
@@ -307,9 +271,11 @@ export default function ChecklistScreen() {
           {task.title.includes('360도 다면평가') && (
             <Text style={styles.guideText}>-교수님, 전공의, 환자, 간호사, 동료중 4개 이상</Text>
           )}
-          <Text style={[styles.deadlineText, { color: themeColor, fontWeight: 'bold' }]}>{overrideSub || task.deadlineInfo}</Text>
+          <Text style={[styles.deadlineText, { color: themeColor, fontWeight: 'bold' }]}>{task.deadlineInfo}</Text>
         </View>
-        <View style={[styles.counterBadge, task.completed === 1 && { backgroundColor: themeColor }]}><Text style={[styles.counterText, task.completed === 1 && { color: '#FFF' } ]}>{task.currentCount}/{task.requiredCount}</Text></View>
+        {!isSimpleCheck && (
+          <View style={[styles.counterBadge, task.completed === 1 && { backgroundColor: themeColor }]}><Text style={[styles.counterText, task.completed === 1 && { color: '#FFF' } ]}>{task.currentCount}/{task.requiredCount}</Text></View>
+        )}
       </TouchableOpacity>
     );
   };

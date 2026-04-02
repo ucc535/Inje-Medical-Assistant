@@ -6,13 +6,13 @@ import * as Sharing from 'expo-sharing';
 import * as SQLite from 'expo-sqlite';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert, FlatList,
-    Modal,
-    SafeAreaView, StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity, View
+  ActivityIndicator,
+  Alert, FlatList,
+  Modal,
+  SafeAreaView, StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity, View
 } from 'react-native';
 
 const db = SQLite.openDatabaseSync('clinical_box_v2.db');
@@ -24,7 +24,7 @@ interface BoxItem {
   parentId: number | null;
   uri?: string;
   size?: number;
-  isStarred: number; // 💡 0: 일반, 1: 즐겨찾기
+  isStarred: number; 
 }
 
 export default function StorageScreen() {
@@ -39,7 +39,6 @@ export default function StorageScreen() {
   const [targetItemId, setTargetItemId] = useState<number | null>(null);
 
   useEffect(() => {
-    // 🏥 DB 테이블 생성 및 즐겨찾기 컬럼(isStarred) 추가
     db.execSync(`
       CREATE TABLE IF NOT EXISTS items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,10 +58,10 @@ export default function StorageScreen() {
       ? "SELECT * FROM items WHERE parentId IS NULL" 
       : "SELECT * FROM items WHERE parentId = ?";
     
+    // 여기는 파라미터 배열이 맞습니다. (getAllSync 문법)
     const params = currentFolderId === null ? [] : [currentFolderId];
     const result = db.getAllSync<BoxItem>(query, ...params);
     
-    // 💡 [정렬 로직] 즐겨찾기(별) -> 폴더 -> 파일 -> 이름순
     const sorted = [...result].sort((a, b) => {
       if (a.isStarred !== b.isStarred) return b.isStarred - a.isStarred;
       if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
@@ -72,42 +71,61 @@ export default function StorageScreen() {
     setDisplayItems(sorted);
   };
 
-  // 📂 파일 추가
+  // 📂 파일 추가 (Expo Go 버그 우회 및 자동 대응 로직 적용)
   const pickFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
-      if (!result.canceled) {
+      
+      if (!result.canceled && result.assets && result.assets.length > 0) {
         setIsUpdating(true);
         const file = result.assets[0];
+        
+        // 정식 저장소 경로를 불러옵니다.
         const docDir = (FileSystem as any).documentDirectory;
-        const internalUri = `${docDir}${Date.now()}_${file.name}`;
-        await FileSystem.copyAsync({ from: file.uri, to: internalUri });
+        let finalUri = file.uri; // 기본적으로는 DocumentPicker가 만들어준 임시 캐시 경로를 사용
+        
+        // 만약 정식 저장소가 정상적으로 존재한다면 (실제 빌드 앱 환경)
+        if (docDir) {
+          const safeSystemFileName = file.name.replace(/\s+/g, '_'); 
+          const internalUri = `${docDir}${Date.now()}_${safeSystemFileName}`;
+          await FileSystem.copyAsync({ from: file.uri, to: internalUri });
+          finalUri = internalUri; // 영구 보관용 경로로 교체
+        } else {
+          // Expo Go 환경이라 정식 경로가 없다면, 경고 팝업 없이 캐시 경로를 그대로 DB에 저장하여 테스트 진행
+          console.warn("Expo Go 임시 환경: 캐시 경로에 파일을 임시 저장합니다.");
+        }
 
         db.runSync(
           "INSERT INTO items (name, type, parentId, uri, size, isStarred) VALUES (?, ?, ?, ?, ?, 0)",
-          file.name, 'file', currentFolderId, internalUri, file.size || 0
+          file.name, 'file', currentFolderId, finalUri, file.size || 0
         );
+        
         refreshList();
       }
-    } catch (e) { Alert.alert('오류', '파일 추가 실패'); }
-    finally { setIsUpdating(false); }
+    } catch (e) { 
+      Alert.alert('파일 추가 실패', String(e)); 
+      console.error(e);
+    } finally { 
+      setIsUpdating(false); 
+    }
   };
 
-  // 📁 폴더/이름 변경 모달 확인
   const handleModalConfirm = () => {
     if (!inputText.trim()) return;
     if (modalMode === 'folder') {
+      // 💡 [문제 해결] 대괄호 제거
       db.runSync("INSERT INTO items (name, type, parentId) VALUES (?, ?, ?)", inputText.trim(), 'folder', currentFolderId);
     } else if (modalMode === 'rename' && targetItemId) {
+      // 💡 [문제 해결] 대괄호 제거
       db.runSync("UPDATE items SET name = ? WHERE id = ?", inputText.trim(), targetItemId);
     }
     setModalMode(null);
     refreshList();
   };
 
-  // ⭐ 즐겨찾기 토글 (중요!)
   const toggleStar = (item: BoxItem) => {
     const newStatus = item.isStarred === 1 ? 0 : 1;
+    // 💡 [문제 해결] 대괄호 제거
     db.runSync("UPDATE items SET isStarred = ? WHERE id = ?", newStatus, item.id);
     refreshList();
   };
@@ -133,6 +151,7 @@ export default function StorageScreen() {
     Alert.alert('삭제 확인', '정말 삭제할까요?', [
       { text: '취소' },
       { text: '삭제', style: 'destructive', onPress: async () => {
+          // 💡 [문제 해결] 대괄호 제거
           db.runSync("DELETE FROM items WHERE id = ?", target.id);
           if (target.uri) await FileSystem.deleteAsync(target.uri, { idempotent: true });
           refreshList();
@@ -143,6 +162,7 @@ export default function StorageScreen() {
   const goUp = () => {
     if (currentFolderId === null) router.back();
     else {
+      // 💡 [문제 해결] 대괄호 제거
       const currentFolder = db.getFirstSync<BoxItem>("SELECT parentId FROM items WHERE id = ?", currentFolderId);
       setCurrentFolderId(currentFolder ? currentFolder.parentId : null);
     }
@@ -224,7 +244,8 @@ const getFileIcon = (name: string) => {
   const ext = name.split('.').pop()?.toLowerCase();
   if (['jpg', 'jpeg', 'png', 'gif'].includes(ext!)) return 'image-outline';
   if (ext === 'pdf') return 'document-text-outline';
-  if (['xlsx', 'xls'].includes(ext!)) return 'stats-chart-outline';
+  if (['xlsx', 'xls', 'csv'].includes(ext!)) return 'stats-chart-outline';
+  if (['doc', 'docx', 'txt'].includes(ext!)) return 'document-text';
   return 'file-tray-full-outline';
 };
 
@@ -235,7 +256,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#1A1A1A', flex: 1, textAlign: 'center' },
   listContainer: { padding: 20, paddingBottom: 100 },
   card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', padding: 15, borderRadius: 18, marginBottom: 12, elevation: 2, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 5 },
-  starredCard: { borderLeftWidth: 4, borderLeftColor: '#F1C40F' }, // 즐겨찾기는 왼쪽 노란 선 표시
+  starredCard: { borderLeftWidth: 4, borderLeftColor: '#F1C40F' }, 
   iconBox: { width: 45, height: 45, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   info: { flex: 1, marginLeft: 15 },
   nameRow: { flexDirection: 'row', alignItems: 'center' },
