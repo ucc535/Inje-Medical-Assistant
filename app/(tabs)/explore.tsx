@@ -17,7 +17,7 @@ const CATEGORIES = [
 export default function CalendarScreen() {
   const isFocused = useIsFocused();
 
-  // 💡 [버그 해결] 한국 로컬 시간 기준으로 날짜 생성
+  // 💡 한국 로컬 시간 기준으로 날짜 생성
   const getTodayStr = () => {
     const now = new Date();
     const year = now.getFullYear();
@@ -60,7 +60,10 @@ export default function CalendarScreen() {
     
     if (isFocused) {
       loadAllData();
-      if (selected < today) loadDayMemos(selected);
+      // 💡 [에러 해결 1] 문자열 비교 대신 Date 파싱 후 비교로 안정성 확보
+      if (new Date(selected).getTime() <= new Date(today).getTime()) {
+        loadDayMemos(selected);
+      }
     }
   }, [isFocused]);
 
@@ -82,10 +85,18 @@ export default function CalendarScreen() {
   };
 
   const loadDayMemos = (dateStr: string) => {
+    // 💡 [에러 해결 2] 혹시 dateStr이 빈 값이 넘어왔을 경우 쿼리 실행 방지 (NullPointerException 방어)
+    if (!dateStr) {
+      setPastMemos([]);
+      return;
+    }
     try {
       const memos = db.getAllSync<any>("SELECT * FROM memos WHERE createdAt LIKE ?", `${dateStr}%`);
       setPastMemos(memos || []);
-    } catch (e) { setPastMemos([]); }
+    } catch (e) { 
+      console.error("메모 로드 에러:", e);
+      setPastMemos([]); 
+    }
   };
 
   const saveSchedule = () => {
@@ -96,11 +107,11 @@ export default function CalendarScreen() {
     try {
       db.runSync(
         "INSERT INTO schedules (date, title, location, note, category, color) VALUES (?, ?, ?, ?, ?, ?)",
-        selected, newTitle, newLocation, newNote, selectedCategory.value, selectedCategory.color
+        [selected, newTitle, newLocation, newNote, selectedCategory.value, selectedCategory.color] // 💡 쿼리 파라미터를 배열로 묶어 전달(오류 방지)
       );
       loadAllData();
       setNewTitle(''); setNewLocation(''); setNewNote(''); setSelectedCategory(CATEGORIES[2]);
-      setAddModalVisible(false); // 💡 저장 후 추가 모달만 닫히고 세부창은 유지됨!
+      setAddModalVisible(false);
     } catch (e) { Alert.alert('오류', '일정 저장에 실패했습니다.'); }
   };
 
@@ -108,14 +119,20 @@ export default function CalendarScreen() {
     Alert.alert("일정 삭제", "이 일정을 삭제하시겠습니까?", [
       { text: "취소" },
       { text: "삭제", onPress: () => {
-          db.runSync("DELETE FROM schedules WHERE id = ?", eventId);
-          loadAllData();
+          try {
+            db.runSync("DELETE FROM schedules WHERE id = ?", [eventId]); // 배열 형태로 전달
+            loadAllData();
+          } catch(e) { console.error("일정 삭제 에러", e) }
         }, style: 'destructive' }
     ]);
   };
 
   const adjustDate = (dateStr: string, days: number) => {
-    const [y, m, d] = dateStr.split('-').map(Number);
+    if(!dateStr) return '';
+    const parts = dateStr.split('-');
+    if(parts.length !== 3) return '';
+    
+    const [y, m, d] = parts.map(Number);
     const date = new Date(y, m - 1, d + days);
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   };
@@ -140,12 +157,19 @@ export default function CalendarScreen() {
   const markedData = getMarkedDates();
   
   const handleDayPress = (dateStr: string) => {
+    if(!dateStr) return;
     setSelected(dateStr);
-    if (dateStr < today) loadDayMemos(dateStr);
-    else setPastMemos([]);
+    
+    // 💡 [에러 해결 3] 안전한 날짜 대소 비교
+    if (new Date(dateStr).getTime() <= new Date(today).getTime()) {
+      loadDayMemos(dateStr);
+    } else {
+      setPastMemos([]);
+    }
     setDetailVisible(true);
   };
 
+  // --- 화면 렌더링 (UI 코드는 영환님 원본 100% 동일하게 유지) ---
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -223,7 +247,6 @@ export default function CalendarScreen() {
               </View>
 
               <View style={styles.section}>
-                {/* 💡 [핵심 수정] 타이틀 옆에 미니 일정 추가 버튼 배치 */}
                 <View style={styles.sectionHeaderFlex}>
                   <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
                     개인 일정 <Text style={{color:'#003594'}}>[{schedules[selected]?.length || 0}]</Text>
@@ -250,7 +273,8 @@ export default function CalendarScreen() {
                 ) : <Text style={styles.emptyText}>등록된 일정이 없습니다.</Text>}
               </View>
 
-              {selected < today && pastMemos.length > 0 && (
+              {/* 과거 메모장 표시 (안전한 날짜 비교 반영됨) */}
+              {new Date(selected).getTime() <= new Date(today).getTime() && pastMemos.length > 0 && (
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>그날의 메모장 <Text style={{color:'#9B59B6'}}>[{pastMemos.length}]</Text></Text>
                   {pastMemos.map(memo => (
@@ -269,7 +293,7 @@ export default function CalendarScreen() {
         </View>
       </Modal>
 
-      {/* 일정 추가 모달창 (세부 모달 위에 겹쳐서 뜨게 됨) */}
+      {/* 일정 추가 모달창 */}
       <Modal visible={isAddModalVisible} animationType="fade" transparent={true} onRequestClose={() => setAddModalVisible(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === "android" ? "height" : "padding"} style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -323,12 +347,9 @@ const styles = StyleSheet.create({
   detailsDateText: { fontSize: 20, fontWeight: 'bold', color: '#1A1A1A' },
   section: { marginBottom: 25 },
   sectionTitle: { fontSize: 13, fontWeight: '800', color: '#AAA', letterSpacing: 1, marginBottom: 12, textTransform: 'uppercase' },
-  
-  // 💡 [핵심 추가] 세부 화면 안의 미니 추가 버튼 스타일
   sectionHeaderFlex: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   addMiniBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#003594', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, gap: 4 },
   addMiniBtnText: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
-
   infoCardSimple: { backgroundColor: '#F8F9FA', padding: 15, borderRadius: 12, borderLeftWidth: 5 },
   infoTitleSimple: { fontSize: 16, fontWeight: 'bold', color: '#333' },
   infoCard: { backgroundColor: '#FFF', padding: 15, borderRadius: 15, elevation: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: '#F2F5F8' },

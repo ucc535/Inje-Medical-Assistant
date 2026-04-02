@@ -6,7 +6,6 @@ import { useRouter } from 'expo-router';
 import * as SQLite from 'expo-sqlite';
 import React, { useEffect, useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-// 💡 분리한 튜토리얼 모달 임포트
 import TutorialModal from '../../components/TutorialModal';
 
 const db = SQLite.openDatabaseSync('medical_assistant_v2.db');
@@ -34,7 +33,6 @@ export default function HomeScreen() {
 
   const [isTutorialVisible, setTutorialVisible] = useState(false);
 
-  // 💡 [핵심 추가] DB 테이블 기초 공사 함수 (한 줄씩 안전하게 생성)
   const initDatabase = () => {
     try {
       db.runSync(`CREATE TABLE IF NOT EXISTS rotations (date TEXT PRIMARY KEY, hospital TEXT, dept TEXT, color TEXT, textColor TEXT)`);
@@ -48,7 +46,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (isFocused) {
-      initDatabase(); // 💡 무조건 데이터를 찾기 전에 테이블부터 생성!
+      initDatabase();
       loadUserData();
       checkUrgentTasks();
       checkFirstLaunch();
@@ -69,7 +67,6 @@ export default function HomeScreen() {
         console.log('알림 권한이 거부되었습니다.');
       }
     };
-
     requestPermissions();
   }, []);
 
@@ -80,9 +77,7 @@ export default function HomeScreen() {
         setTutorialVisible(true);
         await AsyncStorage.setItem('has_seen_tutorial', 'true');
       }
-    } catch (error) {
-      console.log('최초 실행 확인 에러:', error);
-    }
+    } catch (error) { console.log('최초 실행 확인 에러:', error); }
   };
 
   const getCoordinates = (locationName: string) => {
@@ -163,9 +158,18 @@ export default function HomeScreen() {
               <Ionicons name="calendar" size={22} color="#4A90E2" />
               <Text style={styles.headerTitle}>오늘의 일정</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push('/meal' as any)} style={styles.miniMealBtn}>
-              <Ionicons name="restaurant" size={16} color="#003594" />
-            </TouchableOpacity>
+            
+            {/* 💡 [복구 완료] 식단 버튼과 미니 우산 아이콘을 나란히 배치 */}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {(weather.isRainingNow || weather.isRainExpectedAfternoon) && isWarningDismissed && (
+                <TouchableOpacity onPress={() => setIsWarningDismissed(false)} style={[styles.miniMealBtn, { backgroundColor: '#EBF4FF', borderColor: '#D6E4F0' }]}>
+                  <Ionicons name="umbrella" size={16} color="#4A90E2" />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={() => router.push('/meal' as any)} style={styles.miniMealBtn}>
+                <Ionicons name="restaurant" size={16} color="#003594" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {todaySchedules.length > 0 ? (
@@ -214,7 +218,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#ffffff', borderRadius: 24, padding: 24, elevation: 5 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
   headerTitle: { fontSize: 16, fontWeight: 'bold', color: '#CCC', letterSpacing: 1 },
-  miniMealBtn: { padding: 8, backgroundColor: '#F2F5F8', borderRadius: 12, borderWidth: 1, borderColor: '#EBF0F5' },
+  miniMealBtn: { padding: 8, backgroundColor: '#F2F5F8', borderRadius: 12, borderWidth: 1, borderColor: '#EBF0F5', justifyContent: 'center', alignItems: 'center' },
   scheduleItemContainer: { paddingLeft: 16, paddingVertical: 10, borderLeftWidth: 6, borderRadius: 4, marginBottom: 5 },
   scheduleDivider: { marginTop: 15, paddingTop: 20, borderTopWidth: 1, borderTopColor: '#F2F5F8' },
   categoryBadge: { marginBottom: 6 },

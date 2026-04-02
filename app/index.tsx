@@ -8,25 +8,21 @@ export default function IntroScreen() {
   const router = useRouter();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   
-  // 화면 상태를 관리 (초기 로딩 'splash' -> 동의 화면 'consent')
   const [viewState, setViewState] = useState<'splash' | 'consent'>('splash');
   const [isAgreed, setIsAgreed] = useState(false);
 
   useEffect(() => {
-    // 1. 페이드 인 애니메이션 시작 (기존 로직 유지)
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 2000,
       useNativeDriver: true,
     }).start();
 
-    // 2. 유저 데이터 확인 후 화면 전환 로직
     const checkUserAndNavigate = async () => {
       try {
         const consented = await AsyncStorage.getItem('user_consented');
         const userName = await AsyncStorage.getItem('user_name');
 
-        // 3초 뒤에 결과에 따라 이동
         setTimeout(() => {
           if (consented === 'true') {
             if (userName) {
@@ -35,13 +31,11 @@ export default function IntroScreen() {
               router.replace('/setup' as any);
             }
           } else {
-            // 동의를 안 했으면 동의 화면으로 전환
             setViewState('consent');
           }
         }, 3000);
       } catch (e) {
         console.error("데이터 로딩 실패:", e);
-        // 오류 시 안전하게 동의 화면으로 유도
         setTimeout(() => setViewState('consent'), 3000);
       }
     };
@@ -56,29 +50,23 @@ export default function IntroScreen() {
     }
     try {
       await AsyncStorage.setItem('user_consented', 'true');
-      router.replace('/setup' as any); // 동의 완료 후 이름 설정으로 이동
+      router.replace('/setup' as any);
     } catch (e) {
       Alert.alert('오류', '저장에 실패했습니다.');
     }
   };
 
-  // 🌟 스플래시 화면 (기존 인트로 화면)
   if (viewState === 'splash') {
     return (
       <SafeAreaView style={styles.splashContainer}>
         <Animated.View style={[styles.splashContent, { opacity: fadeAnim }]}>
-          {/* 상단 네이비 로고 */}
           <View style={styles.logoWrapper}>
             <Ionicons name="medical" size={80} color="#003594" />
           </View>
-
-          {/* 학교 및 앱 이름 */}
           <Text style={styles.univText}>INJE UNIVERSITY</Text>
           <Text style={styles.collegeText}>College of Medicine</Text>
           <View style={styles.divider} />
           <Text style={styles.appName}>SMART ASSISTANT</Text>
-
-          {/* 로딩 아이콘 영역 */}
           <View style={styles.loaderWrapper}>
             <ActivityIndicator size="large" color="#4A90E2" />
             <Text style={styles.loaderText}>Initializing Clinical Environment...</Text>
@@ -88,7 +76,6 @@ export default function IntroScreen() {
     );
   }
 
-  // 🛡️ 동의서 화면 (스플래시 통과 후 동의 안 한 유저에게만 표시)
   return (
     <SafeAreaView style={styles.consentContainer}>
       <View style={styles.consentHeader}>
@@ -97,7 +84,12 @@ export default function IntroScreen() {
         <Text style={styles.consentSubTitle}>PK Note 시작을 위해 아래 약관 동의가 필요합니다.</Text>
       </View>
 
-      <ScrollView style={styles.consentScroll} showsVerticalScrollIndicator={true}>
+      {/* 💡 수정 포인트: contentContainerStyle을 추가하여 스크롤 안쪽 밑바닥에 빈 공간을 넉넉히 줍니다. */}
+      <ScrollView 
+        style={styles.consentScroll} 
+        contentContainerStyle={styles.consentScrollContent}
+        showsVerticalScrollIndicator={true}
+      >
         <Text style={styles.consentTextBody}>
           <Text style={styles.boldText}>[제1조 목적]{'\n'}</Text>
           본 애플리케이션(이하 "앱")은 인제대학교 의과대학 임상실습생의 일정 관리, 과제 확인 및 학습 메모 기록을 지원하는 개인 학습 보조 도구입니다.{'\n\n'}
@@ -145,7 +137,6 @@ export default function IntroScreen() {
 }
 
 const styles = StyleSheet.create({
-  // --- 스플래시 화면 스타일 ---
   splashContainer: { flex: 1, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' },
   splashContent: { alignItems: 'center', width: '100%' },
   logoWrapper: { marginBottom: 20 },
@@ -156,12 +147,16 @@ const styles = StyleSheet.create({
   loaderWrapper: { marginTop: 60, alignItems: 'center', gap: 15 },
   loaderText: { fontSize: 12, color: '#BBB', fontStyle: 'italic' },
 
-  // --- 동의서 화면 스타일 ---
   consentContainer: { flex: 1, backgroundColor: '#FFF' },
   consentHeader: { padding: 30, alignItems: 'center', backgroundColor: '#F8F9FA' },
   consentTitle: { fontSize: 22, fontWeight: 'bold', color: '#1A1A1A', marginTop: 15 },
   consentSubTitle: { fontSize: 13, color: '#666', marginTop: 5, textAlign: 'center' },
-  consentScroll: { flex: 1, padding: 20, borderBottomWidth: 1, borderBottomColor: '#EEE' },
+  
+  // 💡 스크롤 뷰 자체의 여백은 없애고 테두리만 남깁니다.
+  consentScroll: { flex: 1, borderBottomWidth: 1, borderBottomColor: '#EEE' },
+  // 💡 스크롤 되는 '내용물' 쪽에 상하좌우 여백을 주고, 특히 아래쪽(paddingBottom)을 50으로 넉넉히 줍니다!
+  consentScrollContent: { padding: 20, paddingBottom: 50 },
+  
   consentTextBody: { fontSize: 14, color: '#333', lineHeight: 24 },
   boldText: { fontWeight: 'bold', color: '#003594', fontSize: 15 },
   consentFooter: { padding: 20, paddingBottom: 40 },
